@@ -217,6 +217,7 @@ class static_press_admin {
 		<?php screen_icon(); ?>
 		<h2><?php echo esc_html( $title ); ?></h2>
 		<?php submit_button(__('Rebuild', self::TEXT_DOMAIN), 'primary', 'rebuild'); ?>
+		<?php submit_button(__('Force Rebuild', self::TEXT_DOMAIN), 'primary', 'force_rebuild'); ?>
 		<div id="rebuild-result"></div>
 		</div>
 <?php
@@ -235,8 +236,29 @@ jQuery(function($){
 	var file_count = 0;
 	var loader = $('<div id="loader" style="line-height: 115px; text-align: center;"><img alt="activity indicator" src="<?php echo plugins_url( 'images/ajax-loader.gif' , dirname(__FILE__) ); ?>"></div>');
 
+	function pre_static_press_init(){
+		$('#force_rebuild').hide();
+		$('#rebuild').hide();
+		$.ajax('<?php echo $admin_ajax; ?>',{
+			data: {action: 'static_press_count_clear'},
+			cache: false,
+			dataType: 'json',
+			type: 'POST',
+			success: function(response){
+				static_press_init();
+			},
+			error: function(){
+				$('#rebuild').show();
+				$('#force_rebuild').show();
+				$('#rebuild-result').append('<p id="message"><strong><?php echo __('Error!', self::TEXT_DOMAIN);?></strong></p>');
+				$('html,body').animate({scrollTop: $('#message').offset().top},'slow');
+			}
+		});
+	}
+
 	function static_press_init(){
 		file_count = 0;
+		$('#force_rebuild').hide();
 		$('#rebuild').hide();
 		$('#rebuild-result')
 			.html('<p><strong><?php echo __('Initialyze...', self::TEXT_DOMAIN);?></strong></p>')
@@ -261,6 +283,7 @@ jQuery(function($){
 			},
 			error: function(){
 				$('#rebuild').show();
+				$('#force_rebuild').show();
 				$('#loader').remove();
 				$('#rebuild-result').append('<p id="message"><strong><?php echo __('Error!', self::TEXT_DOMAIN);?></strong></p>');
 				$('html,body').animate({scrollTop: $('#message').offset().top},'slow');
@@ -298,6 +321,7 @@ jQuery(function($){
 			},
 			error: function(){
 				$('#rebuild').show();
+				$('#force_rebuild').show();
 				$('#loader').remove();
 				$('#rebuild-result').append('<p id="message"><strong><?php echo __('Error!', self::TEXT_DOMAIN);?></strong></p>');
 				$('html,body').animate({scrollTop: $('#message').offset().top},'slow');
@@ -315,6 +339,7 @@ jQuery(function($){
 			success: function(response){
 				<?php if (self::DEBUG_MODE) echo "console.log(response);\n" ?>
 				$('#rebuild').show();
+				$('#force_rebuild').show();
 				$('#loader').remove();
 				$('#rebuild-result').append('<p id="message"><strong><?php echo __('End',   self::TEXT_DOMAIN);?></strong></p>');
 				$('html,body').animate({scrollTop: $('#message').offset().top},'slow');
@@ -322,6 +347,7 @@ jQuery(function($){
 			},
 			error: function(){
 				$('#rebuild').show();
+				$('#force_rebuild').show();
 				$('#loader').remove();
 				$('#rebuild-result').append('<p id="message"><strong><?php echo __('Error!',   self::TEXT_DOMAIN);?></strong></p>');
 				$('html,body').animate({scrollTop: $('#message').offset().top},'slow');
@@ -331,6 +357,7 @@ jQuery(function($){
 	}
 
 	$('#rebuild').click(static_press_init);
+	$('#force_rebuild').click(pre_static_press_init);
 });
 </script>
 <?php

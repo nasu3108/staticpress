@@ -35,6 +35,7 @@ class static_press {
 		add_action('wp_ajax_static_press_init', array($this, 'ajax_init'));
 		add_action('wp_ajax_static_press_fetch', array($this, 'ajax_fetch'));
 		add_action('wp_ajax_static_press_finalyze', array($this, 'ajax_finalyze'));
+		add_action('wp_ajax_static_press_count_clear', array($this, 'fetch_finalyze'));
 	}
 
 	static public function url_table(){
@@ -309,7 +310,7 @@ CREATE TABLE `{$this->url_table}` (
 		return $last_id;
 	}
 
-	private function fetch_finalyze() {
+	public function fetch_finalyze() {
 		$transient_key = $this->get_transient_key();
 		if (get_transient($transient_key))
 			delete_transient($transient_key);
@@ -317,7 +318,6 @@ CREATE TABLE `{$this->url_table}` (
 
 	private function fetch_url() {
 		global $wpdb;
-
 		$sql = $wpdb->prepare(
 			"select ID, type, url, pages from {$this->url_table} where `last_upload` < %s and ID > %d and enable = 1 order by ID limit 1",
 			$this->fetch_start_time(),
@@ -373,6 +373,7 @@ CREATE TABLE `{$this->url_table}` (
 		case 'front_page':
 		case 'single':
 		case 'term_archive':
+		case 'pagenation_file':
 		case 'author_archive':
 		case 'other_page':
 			// get remote file
@@ -646,6 +647,8 @@ CREATE TABLE `{$this->url_table}` (
 		$urls = array();
 		$urls = array_merge($urls, $this->front_page_url());
 		$urls = array_merge($urls, $this->single_url());
+		// add
+		$urls = array_merge($urls, $this->pagenation_url());
 		$urls = array_merge($urls, $this->terms_url());
 		$urls = array_merge($urls, $this->author_url());
 		$urls = array_merge($urls, $this->static_files_url());
@@ -716,9 +719,9 @@ CREATE TABLE `{$this->url_table}` (
 		$posts = $wpdb->get_results("
 select ID, post_type, post_content, post_status, post_modified
  from {$wpdb->posts}
- where (post_status = 'publish' or post_type = 'attachment')
+ where (post_status = 'publish' or post_type = 'attachmentxxxxxxx')
  and post_type in ({$this->post_types})
- order by post_type, ID
+ order by post_type, post_modified desc
 ");
 		foreach ($posts as $post) {
 			$post_id = $post->ID;
@@ -854,6 +857,27 @@ SELECT DISTINCT post_author, COUNT(ID) AS count, MAX(post_modified) AS modified
 				'pages' => $page_count,
 				'last_modified' => $modified,
 				);
+		}
+		return $urls;
+	}
+
+	// add new function 
+	private function pagenation_url($url_type = 'pagenation_file') {
+		global $wpdb;
+
+		$found_posts = intval($wpdb->get_var("SELECT count(*) FROM $wpdb->posts WHERE post_status = 'publish' AND post_type = 'post'"));
+		$urls = array();
+
+		$posts_per_page = intval(get_option('posts_per_page'));
+		$pagenation_count = $found_posts / $posts_per_page + 1;
+
+		for ($i = 2; $i < $pagenation_count;$i++) {
+			$url = get_home_url() . '/page/'.intval($i);
+			$urls[] = array(
+				'type' => $url_type,
+				'url' => apply_filters('StaticPress::get_url', $url),
+				'last_modified' => date('Y-m-d h:i:s'),
+			);
 		}
 		return $urls;
 	}
