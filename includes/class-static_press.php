@@ -1,5 +1,7 @@
 <?php
 class static_press {
+	const OPTION_FETCH_ID   = 'StaticPress::fetch id';
+	const OPTION_IS_FORCE_FETCH   = 'StaticPress::is force fetch';
 	const FETCH_LIMIT        =   5;
 	const FETCH_LIMIT_STATIC = 100;
 	const EXPIRES            = 3600;	// 60min * 60sec = 1hour
@@ -36,6 +38,9 @@ class static_press {
 		add_action('wp_ajax_static_press_fetch', array($this, 'ajax_fetch'));
 		add_action('wp_ajax_static_press_finalyze', array($this, 'ajax_finalyze'));
 		add_action('wp_ajax_static_press_count_clear', array($this, 'fetch_finalyze'));
+		add_action('static_press_background_fetch', array($this, 'background_fetch_exec'));
+		add_action('static_press_force_background_fetch', array($this, 'force_background_fetch_exec'));
+		//$this->wp_cron_setting();
 	}
 
 	static public function url_table(){
@@ -139,14 +144,8 @@ CREATE TABLE `{$this->url_table}` (
 		die();
 	}
 
-	public function ajax_init(){
+	private function inner_ajax_init(){
 		global $wpdb;
-
-		if (!defined('WP_DEBUG_DISPLAY'))
-			define('WP_DEBUG_DISPLAY', false);
-
-		if (!is_user_logged_in())
-			wp_die('Forbidden');
 
 		$urls = $this->insert_all_url();
 		$sql = $wpdb->prepare(
@@ -158,17 +157,39 @@ CREATE TABLE `{$this->url_table}` (
 			!is_wp_error($all_urls)
 			? array('result' => true, 'urls_count' => $all_urls)
 			: array('result' => false);
+		return $result;
+	}
+
+	public function ajax_init(){
+		if (!defined('WP_DEBUG_DISPLAY'))
+			define('WP_DEBUG_DISPLAY', false);
+
+		if (!is_user_logged_in())
+			wp_die('Forbidden');
+
+		$result = $this->inner_ajax_init();
 
 		$this->json_output(apply_filters('StaticPress::ajax_init', $result));
 	}
 
-	public function ajax_fetch(){
-		if (!is_user_logged_in())
-			wp_die('Forbidden');
+	private function inner_ajax_finalyze(){
+		$static_file = $this->create_static_file($this->get_site_url().'404.html');
+		$this->fetch_finalyze();
 
+		$result = array('result' => true);
+	}
+
+	public function ajax_finalyze(){
 		if (!defined('WP_DEBUG_DISPLAY'))
 			define('WP_DEBUG_DISPLAY', false);
 
+		if (!is_user_logged_in())
+			wp_die('Forbidden');
+
+		return $this->inner_ajax_finalyze();
+	}
+
+	private function inner_ajax_fetch(){
 		$url = $this->fetch_url();
 		if (!$url) {
 			$result = array('result' => false, 'final' => true);
@@ -230,20 +251,18 @@ CREATE TABLE `{$this->url_table}` (
 		}
 
 		$result = array('result' => true, 'files' => $result, 'final' => ($url === false));
-		$this->json_output(apply_filters('StaticPress::ajax_fetch', $result, $url));
+		return $result;
 	}
 
-	public function ajax_finalyze(){
-		if (!defined('WP_DEBUG_DISPLAY'))
-			define('WP_DEBUG_DISPLAY', false);
-
+	public function ajax_fetch(){
 		if (!is_user_logged_in())
 			wp_die('Forbidden');
 
-		$static_file = $this->create_static_file($this->get_site_url().'404.html');
-		$this->fetch_finalyze();
+		if (!defined('WP_DEBUG_DISPLAY'))
+			define('WP_DEBUG_DISPLAY', false);
 
-		$result = array('result' => true);
+		$result = $this->inner_ajax_fetch();
+
 		$this->json_output(apply_filters('StaticPress::ajax_finalyze', $result));
 	}
 
@@ -998,5 +1017,78 @@ SELECT DISTINCT post_author, COUNT(ID) AS count, MAX(post_modified) AS modified
 		/x
 END;
 		return preg_replace($regex, '$1', $content);
+	}
+
+	public function force_background_fetch_exec(){
+		error_log("force_background_fetch_exec START");
+
+		error_log("############## static_press_fetch_finalyze ################");
+
+		$this->fetch_finalyze();
+		update_option(self::OPTION_IS_FORCE_FETCH, 1);
+		update_option(self::OPTION_FETCH_ID, 0);
+
+		error_log("force_background_fetch_exec End");
+	}
+
+	private function inner_background_fetch_exec(){
+		error_log("background_fetch_exec START");
+
+		$file_count = 0;
+
+		error_log("############## static_press_init ################");
+
+		$result = $this->inner_ajax_init();
+
+		error_log(serialize($result));
+
+		if($result['result']){
+			foreach ($result['urls_count'] as $value){
+				error_log($value->type.' ('.$value->count.')'."");
+			}
+
+			$fetch_id = intval(get_option(self::OPTION_FETCH_ID, 0));
+			$file_count = $this->fetch_last_id($fetch_id);
+			error_log("############## static_press_fetch ################");
+			while($result['result']){
+				$result = $this->inner_ajax_fetch();
+
+				foreach ($result['files'] as $value){
+					if($value['static']){
+						error_log($file_count.' : '.$value['static']."");
+						++$file_count;
+						update_option(self::OPTION_FETCH_ID, $file_count);
+					}
+				}
+
+				if($result['final']){
+					error_log("############## static_press_finalyze ################");
+					$result = $this->inner_ajax_finalyze();
+					update_option(self::OPTION_IS_FORCE_FETCH, 0);
+					
+					break;
+				}
+			}
+		}
+		error_log("background_fetch_exec End");
+	}
+
+	public function background_fetch_exec(){
+		error_log("background_fetch_exec check");
+		if(intval(get_option(self::OPTION_IS_FORCE_FETCH, 0)) === 0){
+			echo "end";
+			return;
+		}
+
+		$this->inner_background_fetch_exec();
+	}
+
+	private function wp_cron_setting(){
+		if ( !wp_next_scheduled( 'static_press_background_fetch' ) ) {
+			wp_schedule_event( time() , 'daily', 'static_press_background_fetch' );
+		}
+		if ( !wp_next_scheduled( 'static_press_force_background_fetch' ) ) {
+			wp_schedule_event( time() , 'daily', 'static_press_force_background_fetch' );
+		}
 	}
 }

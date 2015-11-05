@@ -200,7 +200,6 @@ class static_press_admin {
 		</form>
 		</div>
 <?php
-
 		do_action('StaticPress::options_page');
 	}
 
@@ -258,7 +257,6 @@ jQuery(function($){
 
 	function static_press_init(){
 		file_count = 0;
-		$('#force_rebuild').hide();
 		$('#rebuild').hide();
 		$('#rebuild-result')
 			.html('<p><strong><?php echo __('Initialyze...', self::TEXT_DOMAIN);?></strong></p>')
